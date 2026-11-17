@@ -65,7 +65,7 @@ async function runEdgeCases(email: string) {
   ]);
   const fdz = new FormData();
   fdz.append('consent', 'true');
-  fdz.append('zip', new File([zip], 'resumes.zip', { type: 'application/zip' }));
+  fdz.append('zip', new File([new Uint8Array(zip)], 'resumes.zip', { type: 'application/zip' }));
   const zr = await api(token, 'POST', '/api/batches/upload', fdz);
   const zfin = zr.status === 202 ? await waitForBatch(token, zr.data.batch.id) : null;
   check('ZIP: 2 analyzed, exe skipped free', zr.data?.creditsReserved === 2 && zfin?.counts?.done === 2 && zfin?.counts?.rejected === 1, JSON.stringify(zfin?.counts));
@@ -74,7 +74,7 @@ async function runEdgeCases(email: string) {
   const nested = await zipOf([{ name: 'inner.zip', data: 'PK' }]);
   const fdn = new FormData();
   fdn.append('consent', 'true');
-  fdn.append('zip', new File([nested], 'bad.zip', { type: 'application/zip' }));
+  fdn.append('zip', new File([new Uint8Array(nested)], 'bad.zip', { type: 'application/zip' }));
   const b2 = await balance(token);
   const nr = await api(token, 'POST', '/api/batches/upload', fdn);
   check('nested ZIP rejected, no charge', nr.status === 400 && nr.json?.error?.code === 'ZIP_NESTED_ARCHIVE' && (await balance(token)) === b2, nr.json?.error?.code);
