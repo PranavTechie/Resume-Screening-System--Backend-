@@ -29,3 +29,14 @@ export function sendError(
   };
   return res.status(statusCode).json(payload);
 }
+
+/** Send an AppError (or anything) using the standard envelope. Details are also spread on `error`. */
+export function sendAppError(res: Response, err: { code?: string; message?: string; status?: number; details?: Record<string, unknown> }, extra?: Record<string, unknown>): Response {
+  const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
+  const message = status >= 500 && !err.code ? 'Something went wrong. Please try again.' : err.message || 'Request failed';
+  return res.status(status).json({
+    success: false,
+    error: { code: err.code || 'INTERNAL_ERROR', message, ...(err.details || {}), ...(extra || {}) },
+    timestamp: new Date().toISOString(),
+  });
+}

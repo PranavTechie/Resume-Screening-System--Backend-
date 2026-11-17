@@ -8,7 +8,12 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check:consistency": "tsx scripts/scoreConsistency.ts",
+    "load:test": "tsx scripts/loadTest.ts",
+    "smoke": "tsx scripts/apiSmoke.ts"
   },
   "dependencies": {
     "@google/genai": "^0.2.0",
@@ -22,6 +27,7 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "pdf-parse": "^1.1.1",
+    "yauzl": "^3.4.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -31,7 +37,11 @@
     "@types/multer": "^1.4.12",
     "@types/node": "^22.10.1",
     "@types/pdf-parse": "^1.1.4",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7",
+    "yazl": "^3.3.1"
   }
 }

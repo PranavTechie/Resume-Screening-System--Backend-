@@ -1,12 +1,13 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import { env, validateEnv } from './config/env';
 import { logger } from './utils/logger';
 import routes from './routes';
 import { errorHandler } from './middleware/error.middleware';
 import { apiLimiter } from './middleware/rateLimit.middleware';
+import { requestContext } from './middleware/requestContext.middleware';
+import { jobWorker } from './workers/jobWorker';
 
 const app = express();
 const PORT = parseInt(env.PORT, 10) || 3000;
@@ -57,7 +58,7 @@ const corsOptions: cors.CorsOptions = {
       }
     }
 
-    logger.warn(`CORS blocked request from origin: ${requestOrigin}`);
+    logger.warn('cors.blocked', { origin: requestOrigin });
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -79,14 +80,12 @@ app.use(cors(corsOptions));
 // Explicit preflight handler for OPTIONS requests
 app.options('*', cors(corsOptions));
 
-app.use(morgan('combined', {
-  stream: {
-    write: (message: string) => logger.info(message.trim()),
-  },
-}));
+app.set('trust proxy', 1); // Railway / reverse proxy: rate limits see the real client IP
 
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+app.use(requestContext);
+
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Apply general API rate limiting
 app.use('/api', apiLimiter);
@@ -109,9 +108,27 @@ app.use((req, res) => {
 // Centralized error handling middleware
 app.use(errorHandler);
 
-// Start HTTP server
-app.listen(PORT, '0.0.0.0', () => {
-  logger.info(`Resume Screening System Backend API running on port ${PORT} [Mode: ${env.NODE_ENV}]`);
+// Start HTTP server + background worker
+const server = app.listen(PORT, '0.0.0.0', () => {
+  logger.info('server.started', { port: PORT, mode: env.NODE_ENV, worker: env.WORKER_ENABLED, aiMock: env.AI_MOCK_MODE });
+  if (env.WORKER_ENABLED) jobWorker.start();
+});
+server.requestTimeout = 180_000; // single uploads with vision OCR can take up to ~2 min
+server.headersTimeout = 185_000;
+
+let shuttingDown = false;
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info('server.shutdown', { signal });
+  server.close();
+  await jobWorker.stop();
+  process.exit(0);
+}
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('unhandledRejection', (reason: any) => {
+  logger.error('process.unhandled_rejection', { error: String(reason?.message || reason).slice(0, 300) });
 });
 
 export default app;

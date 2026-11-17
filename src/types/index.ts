@@ -46,6 +46,12 @@ export interface ResumeAnalysisOutput {
   candidateLinkedIn?: string | null;
   candidateGitHub?: string | null;
   candidateWebsite?: string | null;
+  /** Resume text was longer than the AI prompt limit; analysis used the first part only. */
+  truncated?: boolean;
+  documentType?: string | null;
+  scoringVersion?: string | null;
+  aiModel?: string | null;
+  createdAt?: string;
 }
 
 export interface JobMatchOutput {
@@ -73,9 +79,16 @@ export interface JobMatchResult {
   atsMatchPercentage?: number;
   skillsMatchedCount?: number;
   experienceMatchPercentage?: number;
+  skillCoveragePercentage?: number | null;
+  aiJudgmentPercentage?: number | null;
   matchSummary: string;
+  matchReason?: string | null;
   strongMatches: string[];
   skillGaps: string[];
+  candidateStatus?: string;
+  scoringVersion?: string | null;
+  aiModel?: string | null;
+  scoreBreakdown?: any;
 }
 
 export interface JobItem {
