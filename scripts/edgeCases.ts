@@ -1,10 +1,12 @@
 /**
  * Edge cases against a running backend (use AI_MOCK_MODE=true on a dev server):
  * cancel refunds, ZIP upload, unsafe ZIP rejected, same-candidate dedupe in a job, rejection cap (429).
- *   API_URL=http://localhost:3005 npx tsx scripts/edgeCases.ts
+ * Hits the single live Supabase project (no dev/staging DB exists) — the test account it creates is
+ * deleted automatically when the script exits, pass or fail.
+ *   CONFIRM_LIVE_TEST=yes API_URL=http://localhost:3005 npx tsx scripts/edgeCases.ts
  */
 import yazl from 'yazl';
-import { api, fakeResume, JUNK_TEXT, ledgerCheck, SAMPLE_JD, testUserSession, topUpTestCredits, waitForBatch } from './lib';
+import { api, cleanupTestUser, fakeResume, JUNK_TEXT, ledgerCheck, SAMPLE_JD, testUserSession, topUpTestCredits, waitForBatch } from './lib';
 
 const results: Array<[string, boolean, string]> = [];
 const check = (name: string, ok: boolean, info = '') => {
@@ -24,7 +26,16 @@ function zipOf(entries: Array<{ name: string; data: string }>): Promise<Buffer> 
 }
 
 async function main() {
-  const { userId, token } = await testUserSession(process.env.EDGE_EMAIL || 'rss.edge.test@example.com');
+  const email = process.env.EDGE_EMAIL || 'rss.edge.test@example.com';
+  try {
+    await runEdgeCases(email);
+  } finally {
+    await cleanupTestUser(email);
+  }
+}
+
+async function runEdgeCases(email: string) {
+  const { userId, token } = await testUserSession(email);
   if ((await balance(token)) < 30) await topUpTestCredits(userId, 30);
   const tag = Date.now();
 
@@ -100,10 +111,12 @@ async function main() {
   check('credit balance == ledger', led.ok, `${led.credits} / ${led.ledger}`);
   const failed = results.filter((r) => !r[1]);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
-  process.exit(failed.length ? 1 : 0);
+  if (failed.length) throw new Error(`${failed.length} check(s) failed`);
 }
 
-main().catch((e) => {
-  console.error('Edge-case test crashed:', e.message);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((e) => {
+    console.error('Edge-case test crashed:', e.message);
+    process.exit(1);
+  });

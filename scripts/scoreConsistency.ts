@@ -1,7 +1,8 @@
 /**
  * Scoring consistency check (Phase 4 target: same resume + same JD, 3 runs, within ±5 points).
  * Calls Gemini directly (no credits, no DB writes) with the exact production scoring pipeline.
- *   npm run check:consistency            (RUNS=3 by default)
+ * Still burns real Gemini quota (no mock mode here), so it's gated the same as the other scripts:
+ *   CONFIRM_LIVE_TEST=yes npm run check:consistency            (RUNS=3 by default)
  */
 import path from 'path';
 import dotenv from 'dotenv';

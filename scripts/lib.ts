@@ -10,6 +10,21 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
+// ---------------------------------------------------------------------------
+// Safety gate: this project has only ONE Supabase project (no separate dev/
+// staging DB), and these scripts use the service-role key + make real Gemini
+// calls. Require an explicit opt-in every run so nobody fires them by habit
+// (e.g. muscle-memory `npm run smoke`) against production without meaning to.
+// ---------------------------------------------------------------------------
+if (process.env.CONFIRM_LIVE_TEST !== 'yes') {
+  console.error(
+    `\n⚠️  Refusing to run: this talks to the LIVE production Supabase project (${process.env.SUPABASE_URL || '(SUPABASE_URL not set)'}) and makes real Gemini calls.\n` +
+      `There is no separate dev/staging database. Test users (@example.com) and their data are cleaned up automatically after the run, but Gemini quota is real and not refundable.\n\n` +
+      `If you're sure, re-run with:\n  CONFIRM_LIVE_TEST=yes <your command>\n`
+  );
+  process.exit(1);
+}
+
 export const API = (process.env.API_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
 
 export function admin(): SupabaseClient {
@@ -46,6 +61,24 @@ export async function topUpTestCredits(userId: string, amount: number): Promise<
   if (!prof?.email?.endsWith('@example.com')) throw new Error('Refusing to top up a non-test account');
   await sb.from('credit_transactions').insert({ user_id: userId, amount, type: 'BONUS', description: 'Automated test credits', reference_id: `test-topup:${Date.now()}` });
   await sb.from('profiles').update({ credits: (prof.credits || 0) + amount }).eq('id', userId);
+}
+
+/**
+ * Fully remove a test account and everything it owns. Every public table's user_id FK is
+ * ON DELETE CASCADE back to auth.users, so deleting the auth user is enough — no orphans.
+ * Hard-refuses any email not ending in @example.com so a typo can never touch a real account.
+ */
+export async function cleanupTestUser(email: string): Promise<void> {
+  if (!email.toLowerCase().endsWith('@example.com')) {
+    throw new Error(`cleanupTestUser refused: "${email}" is not a @example.com test address`);
+  }
+  const sb = admin();
+  const { data: list } = await sb.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const existing = list?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+  if (!existing) return; // nothing to clean up
+  const { error } = await sb.auth.admin.deleteUser(existing.id);
+  if (error) console.error(`cleanup: failed to delete ${email}: ${error.message}`);
+  else console.log(`cleanup: removed test account ${email} and all its data`);
 }
 
 export async function ledgerCheck(userId: string): Promise<{ credits: number; ledger: number; ok: boolean }> {

@@ -1,10 +1,12 @@
 /**
  * End-to-end API smoke test against a running backend (real Gemini unless AI_MOCK_MODE on the server).
- *   API_URL=http://localhost:3000 npx tsx scripts/apiSmoke.ts
+ * Hits the single live Supabase project (no dev/staging DB exists) — the test account it creates is
+ * deleted automatically when the script exits, pass or fail.
+ *   CONFIRM_LIVE_TEST=yes API_URL=http://localhost:3000 npx tsx scripts/apiSmoke.ts
  * Covers: login, single upload, non-resume rejected without charge, bulk upload of 5 (incl. 1 junk + 1 duplicate),
  * ranking a job, CSV export, credit balance == ledger.
  */
-import { api, fakeResume, JUNK_TEXT, ledgerCheck, SAMPLE_JD, testUserSession, topUpTestCredits, waitForBatch } from './lib';
+import { api, cleanupTestUser, fakeResume, JUNK_TEXT, ledgerCheck, SAMPLE_JD, testUserSession, topUpTestCredits, waitForBatch } from './lib';
 
 const results: Array<[string, boolean, string]> = [];
 const check = (name: string, ok: boolean, info = '') => {
@@ -16,6 +18,14 @@ const txt = (name: string, text: string) => new File([text], name, { type: 'text
 
 async function main() {
   const email = process.env.SMOKE_EMAIL || 'rss.smoke.test@example.com';
+  try {
+    await runChecks(email);
+  } finally {
+    await cleanupTestUser(email);
+  }
+}
+
+async function runChecks(email: string) {
   const { userId, token } = await testUserSession(email);
   check('login (test user)', Boolean(token));
   const health = await fetch(`${process.env.API_URL || 'http://localhost:3000'}/health`).then((r) => r.json());
@@ -103,10 +113,12 @@ async function main() {
 
   const failed = results.filter((r) => !r[1]);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
-  process.exit(failed.length ? 1 : 0);
+  if (failed.length) throw new Error(`${failed.length} check(s) failed`);
 }
 
-main().catch((e) => {
-  console.error('Smoke test crashed:', e.message);
-  process.exit(1);
+main()
+  .then(() => process.exit(0))
+  .catch((e) => {
+    console.error('Smoke test crashed:', e.message);
+    process.exit(1);
 });

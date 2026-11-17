@@ -2,14 +2,25 @@
  * Load sanity check: one batch of 60 generated fake resumes (2 batches: 50 + 10, the per-batch max is 50).
  * Run the backend with AI_MOCK_MODE=true (non-production only) so this tests the queue, not Gemini quota:
  *   AI_MOCK_MODE=true PORT=3005 npm run dev          (in another terminal)
- *   API_URL=http://localhost:3005 npm run load:test
+ *   CONFIRM_LIVE_TEST=yes API_URL=http://localhost:3005 npm run load:test
  * Confirms: every item reaches a final state, credits == ledger, /health stays fast while processing.
+ * Still hits the single live Supabase project for its DB rows even in mock mode — the test account
+ * it creates is deleted automatically when the script exits, pass or fail.
  */
-import { api, fakeResume, ledgerCheck, testUserSession, topUpTestCredits, waitForBatch, API } from './lib';
+import { api, cleanupTestUser, fakeResume, ledgerCheck, testUserSession, topUpTestCredits, waitForBatch, API } from './lib';
 
 async function main() {
+  const email = process.env.LOAD_EMAIL || 'rss.load.test@example.com';
+  try {
+    return await runLoad(email);
+  } finally {
+    await cleanupTestUser(email);
+  }
+}
+
+async function runLoad(email: string) {
   const total = Number(process.env.LOAD_COUNT || 60);
-  const { userId, token } = await testUserSession(process.env.LOAD_EMAIL || 'rss.load.test@example.com');
+  const { userId, token } = await testUserSession(email);
   const bal = (await api(token, 'GET', '/api/credits/balance')).data?.credits ?? 0;
   if (bal < total) await topUpTestCredits(userId, total - bal + 5);
   const before = await ledgerCheck(userId);
@@ -66,10 +77,12 @@ async function main() {
 
   const ok = finalCount === total && after.ok && before.credits - after.credits === (counts.done || 0) && p95 < 1500;
   console.log(ok ? 'PASS' : 'FAIL');
-  process.exit(ok ? 0 : 1);
+  if (!ok) throw new Error('load test failed its checks');
 }
 
-main().catch((e) => {
-  console.error('Load test crashed:', e.message);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((e) => {
+    console.error('Load test crashed:', e.message);
+    process.exit(1);
+  });
